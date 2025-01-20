@@ -1,3 +1,6 @@
+from IPython import get_ipython
+from IPython.display import display
+# %%
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -8,6 +11,9 @@ from fastapi import FastAPI, File, UploadFile
 import uvicorn
 import shutil
 from pycaret.classification import setup, compare_models, pull
+import nest_asyncio # import nest_asyncio
+
+nest_asyncio.apply() # apply nest_asyncio patch
 
 app = FastAPI()
 
@@ -78,5 +84,11 @@ async def upload_file(file: UploadFile = File(...)):
         "pycaret_best_model": str(best_model)
     }
 
-if __name__ == "__main__":
+# Instead of using uvicorn.run directly, define a function to start the server
+def start_server():
+    """Starts the FastAPI server using uvicorn."""
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
+# Run the server only when the script is executed directly, not in a Jupyter Notebook
+if __name__ == "__main__":
+    start_server() # Call the function to start the server
