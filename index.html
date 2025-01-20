@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoML Web App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #4CAF50;
+        }
+        form {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #output {
+            margin-top: 20px;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AutoML Web Application</h1>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <label for="fileInput">Upload Your Dataset (CSV):</label>
+            <input type="file" id="fileInput" accept=".csv" required />
+            <button type="submit">Run AutoML</button>
+        </form>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please upload a file.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = '<p>Processing your dataset, please wait...</p>';
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/upload/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                let html = '<h3>AutoML Results</h3>';
+                html += '<h4>Random Forest Metrics:</h4>';
+                html += `<pre>${JSON.stringify(result.rf_metrics, null, 2)}</pre>`;
+                html += '<h4>XGBoost Metrics:</h4>';
+                html += `<pre>${JSON.stringify(result.xgb_metrics, null, 2)}</pre>`;
+                html += '<h4>PyCaret Leaderboard:</h4>';
+                html += `<pre>${JSON.stringify(result.pycaret_leaderboard, null, 2)}</pre>`;
+                html += `<h4>PyCaret Best Model:</h4><p>${result.pycaret_best_model}</p>`;
+                outputDiv.innerHTML = html;
+            } catch (error) {
+                outputDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
