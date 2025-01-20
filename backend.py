@@ -59,13 +59,12 @@ def run_automl(data):
         "best_params": best_params
     }
 
-@app.route('/run-automl', methods=['POST'])
-def upload_and_run():
+@app.route('/api/run-automl', methods=['POST'])
+def run_pipeline():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files['file']
-
     try:
         # Load dataset
         data = pd.read_csv(file)
@@ -82,6 +81,3 @@ def upload_and_run():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True)
