@@ -3,105 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoML Web App</title>
+    <title>AutoML Deployment</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
             background-color: #f4f4f9;
-            color: #333;
         }
         .container {
-            max-width: 800px;
-            margin: 50px auto;
-            padding: 20px;
             background: white;
+            padding: 20px;
             border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 400px;
         }
         h1 {
-            text-align: center;
-            color: #4CAF50;
-        }
-        form {
-            margin-top: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            margin-bottom: 20px;
+            color: #333;
         }
         input[type="file"] {
-            margin: 10px 0;
+            margin: 15px 0;
         }
         button {
-            background-color: #4CAF50;
+            background-color: #007bff;
             color: white;
             border: none;
-            padding: 10px 20px;
-            cursor: pointer;
+            padding: 10px 15px;
             border-radius: 5px;
+            cursor: pointer;
         }
         button:hover {
-            background-color: #45a049;
+            background-color: #0056b3;
         }
-        #output {
+        #results {
             margin-top: 20px;
-            word-wrap: break-word;
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>AutoML Web Application</h1>
-        <form id="uploadForm" enctype="multipart/form-data">
-            <label for="fileInput">Upload Your Dataset (CSV):</label>
-            <input type="file" id="fileInput" accept=".csv" required />
+        <h1>AutoML Pipeline</h1>
+        <form id="uploadForm">
+            <label for="fileInput">Upload Dataset (CSV):</label>
+            <input type="file" id="fileInput" name="file" accept=".csv" required>
             <button type="submit">Run AutoML</button>
         </form>
-        <div id="output"></div>
+
+        <div id="results">
+            <h2>Results:</h2>
+            <pre id="output">Awaiting results...</pre>
+        </div>
     </div>
 
     <script>
-        document.getElementById('uploadForm').addEventListener('submit', async (event) => {
-            event.preventDefault();
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
 
             const fileInput = document.getElementById('fileInput');
             const file = fileInput.files[0];
 
             if (!file) {
-                alert('Please upload a file.');
+                alert('Please upload a CSV file.');
                 return;
             }
 
             const formData = new FormData();
             formData.append('file', file);
 
-            const outputDiv = document.getElementById('output');
-            outputDiv.innerHTML = '<p>Processing your dataset, please wait...</p>';
+            const output = document.getElementById('output');
+            output.textContent = 'Running AutoML...';
 
             try {
-                const response = await fetch('http://127.0.0.1:8000/upload/', {
+                const response = await fetch('/run-automl', {
                     method: 'POST',
                     body: formData
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
+                    throw new Error('Failed to run AutoML pipeline.');
                 }
 
                 const result = await response.json();
-
-                let html = '<h3>AutoML Results</h3>';
-                html += '<h4>Random Forest Metrics:</h4>';
-                html += `<pre>${JSON.stringify(result.rf_metrics, null, 2)}</pre>`;
-                html += '<h4>XGBoost Metrics:</h4>';
-                html += `<pre>${JSON.stringify(result.xgb_metrics, null, 2)}</pre>`;
-                html += '<h4>PyCaret Leaderboard:</h4>';
-                html += `<pre>${JSON.stringify(result.pycaret_leaderboard, null, 2)}</pre>`;
-                html += `<h4>PyCaret Best Model:</h4><p>${result.pycaret_best_model}</p>`;
-                outputDiv.innerHTML = html;
+                output.textContent = JSON.stringify(result, null, 2);
             } catch (error) {
-                outputDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                output.textContent = `Error: ${error.message}`;
             }
         });
     </script>
