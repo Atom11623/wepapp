@@ -1,94 +1,87 @@
-from IPython import get_ipython
-from IPython.display import display
-# %%
+from flask import Flask, request, jsonify
 import pandas as pd
-import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
-from xgboost import XGBClassifier
-from fastapi import FastAPI, File, UploadFile
-import uvicorn
-import shutil
-from pycaret.classification import setup, compare_models, pull
-import nest_asyncio # import nest_asyncio
+from sklearn.preprocessing import StandardScaler
+import optuna
 
-nest_asyncio.apply() # apply nest_asyncio patch
+app = Flask(__name__)
 
-app = FastAPI()
-
-@app.post("/upload/")
-async def upload_file(file: UploadFile = File(...)):
-    # Save the uploaded file
-    with open(file.filename, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Load the dataset
-    data = pd.read_csv(file.filename)
-
-    # Split the dataset
+# Function to run AutoML with hyperparameter tuning
+def run_automl(data):
+    # Split features and target
     X = data.drop('Outcome', axis=1)
     y = data['Outcome']
+
+    # Split dataset
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-    # Hyperparameter Tuning for Random Forest
-    rf_model = RandomForestClassifier(random_state=42)
-    param_grid_rf = {
-        'n_estimators': [100, 200, 300],
-        'max_depth': [None, 10, 20],
-        'min_samples_split': [2, 5, 10]
-    }
-    grid_rf = GridSearchCV(estimator=rf_model, param_grid=param_grid_rf, cv=3, scoring='roc_auc')
-    grid_rf.fit(X_train, y_train)
-    optimized_rf_model = grid_rf.best_estimator_
+    # Standardize features
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
 
-    # Hyperparameter Tuning for XGBoost
-    xgb_model = XGBClassifier(random_state=42, eval_metric='logloss')
-    param_grid_xgb = {
-        'n_estimators': [100, 200, 300],
-        'max_depth': [3, 6, 9],
-        'learning_rate': [0.01, 0.1, 0.2]
-    }
-    grid_xgb = GridSearchCV(estimator=xgb_model, param_grid=param_grid_xgb, cv=3, scoring='roc_auc')
-    grid_xgb.fit(X_train, y_train)
-    optimized_xgb_model = grid_xgb.best_estimator_
+    # Define Optuna objective function
+    def objective(trial):
+        n_estimators = trial.suggest_int("n_estimators", 100, 500, step=50)
+        max_depth = trial.suggest_int("max_depth", 3, 30, step=3)
+        min_samples_split = trial.suggest_int("min_samples_split", 2, 10, step=2)
 
-    # Model Evaluation
-    rf_metrics = {
-        'Accuracy': accuracy_score(y_test, optimized_rf_model.predict(X_test)),
-        'Precision': precision_score(y_test, optimized_rf_model.predict(X_test)),
-        'Recall': recall_score(y_test, optimized_rf_model.predict(X_test)),
-        'F1 Score': f1_score(y_test, optimized_rf_model.predict(X_test)),
-        'ROC-AUC': roc_auc_score(y_test, optimized_rf_model.predict_proba(X_test)[:, 1])
-    }
+        model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            random_state=42
+        )
 
-    xgb_metrics = {
-        'Accuracy': accuracy_score(y_test, optimized_xgb_model.predict(X_test)),
-        'Precision': precision_score(y_test, optimized_xgb_model.predict(X_test)),
-        'Recall': recall_score(y_test, optimized_xgb_model.predict(X_test)),
-        'F1 Score': f1_score(y_test, optimized_xgb_model.predict(X_test)),
-        'ROC-AUC': roc_auc_score(y_test, optimized_xgb_model.predict_proba(X_test)[:, 1])
-    }
+        model.fit(X_train, y_train)
+        return model.score(X_test, y_test)
 
-    # Leaderboard using PyCaret
-    s = setup(data, target="Outcome", silent=True, verbose=False)
-    best_model = compare_models()
-    leaderboard = pull()
+    # Run Optuna study
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=50)
+
+    # Train best model
+    best_params = study.best_params
+    best_model = RandomForestClassifier(
+        n_estimators=best_params["n_estimators"],
+        max_depth=best_params["max_depth"],
+        min_samples_split=best_params["min_samples_split"],
+        random_state=42
+    )
+    best_model.fit(X_train, y_train)
+
+    # Evaluate the model
+    accuracy = best_model.score(X_test, y_test)
 
     return {
-        "best_rf_params": grid_rf.best_params_,
-        "best_xgb_params": grid_xgb.best_params_,
-        "rf_metrics": rf_metrics,
-        "xgb_metrics": xgb_metrics,
-        "pycaret_leaderboard": leaderboard.to_dict(),
-        "pycaret_best_model": str(best_model)
+        "accuracy": accuracy,
+        "best_params": best_params
     }
 
-# Instead of using uvicorn.run directly, define a function to start the server
-def start_server():
-    """Starts the FastAPI server using uvicorn."""
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+@app.route('/run-automl', methods=['POST'])
+def upload_and_run():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
 
-# Run the server only when the script is executed directly, not in a Jupyter Notebook
-if __name__ == "__main__":
-    start_server() # Call the function to start the server
+    file = request.files['file']
+
+    try:
+        # Load dataset
+        data = pd.read_csv(file)
+        if 'Outcome' not in data.columns:
+            return jsonify({"error": "Dataset must contain an 'Outcome' column."}), 400
+
+        # Run AutoML pipeline
+        results = run_automl(data)
+
+        return jsonify({
+            "message": "AutoML pipeline executed successfully.",
+            "results": results
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
